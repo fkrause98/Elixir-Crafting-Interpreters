@@ -62,12 +62,11 @@ defmodule Scanner.Parser do
   defparsec(
     :lox_syntax,
     single_char_parser
+    |> repeat
     |> post_traverse({:map_token_to_type, []})
-    # single_char_parser
   )
 
-  defp map_token_to_type(rest, args = [char], context, {line, col}, offset)
-       when is_binary(char) do
+  defp tokenize(char, line) do
     token_type =
       cond do
         char == "(" -> :left_paren
@@ -84,14 +83,16 @@ defmodule Scanner.Parser do
         true -> :unknown
       end
 
-    token = %Token{
+    %Token{
       type: token_type,
       lexeme: char,
       literal: nil,
       line: line
     }
+  end
 
-    {rest, [token], context}
+  defp map_token_to_type(rest, args, context, {line, col}, offset) do
+    {rest, args |> Enum.map(fn char -> tokenize(char, line) end), context}
   end
 end
 

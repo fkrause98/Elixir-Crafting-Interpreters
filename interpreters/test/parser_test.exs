@@ -115,7 +115,7 @@ defmodule InterpretersTest.Parser do
     test "Lox Syntax -- Two single tokens" do
       input = "()"
       expected_1 = %Token{type: :left_paren, lexeme: "(", literal: nil, line: 1}
-      expected_2 = %Token{type: :right_paren, lexeme: ")", literal: nil, line: 2}
+      expected_2 = %Token{type: :right_paren, lexeme: ")", literal: nil, line: 1}
 
       parsing_result = Scanner.Parser.lox_syntax(input)
 
