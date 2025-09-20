@@ -33,7 +33,7 @@ defmodule Lox do
   end
 
   defp loop() do
-    IO.write("my_repl> ")
+    IO.write("lox> ")
     line = IO.gets("") |> String.trim()
 
     case line do
@@ -44,7 +44,7 @@ defmodule Lox do
         loop()
 
       input ->
-        IO.puts("input")
+        IO.inspect(input)
 
         loop()
     end
