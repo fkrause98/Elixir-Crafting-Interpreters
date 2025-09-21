@@ -3,11 +3,19 @@ defmodule Scanner.Parser do
   single_integer = integer(min: 1) |> lookahead_not(string("."))
   integer_point_and_decimal = integer(min: 1) |> string(".") |> integer(min: 1)
 
+  def float_parse([input]) when is_integer(input), do: input / 1.0
+
+  def float_parse([integer_part, ".", decimal_part]) do
+    {parsed, ""} = Float.parse("#{integer_part}.#{decimal_part}")
+    parsed
+  end
+
   decimal_parser =
     choice([
       single_integer,
       integer_point_and_decimal
     ])
+    |> reduce({:float_parse, []})
 
   defparsec(:decimal, decimal_parser)
 
@@ -59,28 +67,70 @@ defmodule Scanner.Parser do
     |> reduce({List, :to_string, []})
   )
 
+  whitespace =
+    choice([
+      string(" "),
+      string("\t"),
+      string("\r"),
+      string("\n") |> replace(:newline)
+    ])
+    |> ignore()
+
   defparsec(
     :lox_syntax,
-    single_char_parser
+    choice([
+      whitespace |> ignore,
+      decimal_parser,
+      single_char_parser
+    ])
     |> repeat
     |> post_traverse({:map_token_to_type, []})
   )
 
+  defp tokenize(num, line) when is_float(num) do
+    %Token{
+      type: :number,
+      lexeme: nil,
+      literal: num,
+      line: line
+    }
+  end
+
   defp tokenize(char, line) do
     token_type =
       cond do
-        char == "(" -> :left_paren
-        char == ")" -> :right_paren
-        char == "{" -> :left_brace
-        char == "}" -> :right_brace
-        char == "," -> :comma
-        char == "." -> :dot
-        char == "-" -> :minus
-        char == "+" -> :plus
-        char == ";" -> :semicolon
-        char == "*" -> :star
-        # is_operator(char, following_chars) -> operator_type(char)
-        true -> :unknown
+        char == "(" ->
+          :left_paren
+
+        char == ")" ->
+          :right_paren
+
+        char == "{" ->
+          :left_brace
+
+        char == "}" ->
+          :right_brace
+
+        char == "," ->
+          :comma
+
+        char == "." ->
+          :dot
+
+        char == "-" ->
+          :minus
+
+        char == "+" ->
+          :plus
+
+        char == ";" ->
+          :semicolon
+
+        char == "*" ->
+          :star
+
+        true ->
+          :unknown
       end
 
     %Token{
@@ -92,7 +142,20 @@ defmodule Scanner.Parser do
   end
 
   defp map_token_to_type(rest, args, context, {line, col}, offset) do
-    {rest, args |> Enum.map(fn char -> tokenize(char, line) end), context}
+    {tokens, current_line} =
+      Enum.reduce(args, {[], line}, fn
+        :newline, {acc, current_line} ->
+          {acc, current_line + 1}
+
+        char, {acc, current_line} when char in ["\r", "\t", " "] ->
+          {acc, current_line}
+
+        char, {acc, current_line} ->
+          token = tokenize(char, current_line)
+          {[token | acc], current_line}
+      end)
+
+    {rest, Enum.reverse(tokens), context}
   end
 end
 

@@ -5,12 +5,12 @@ defmodule InterpretersTest.Parser do
 
     test "Decimal parser -- single integer" do
       input = "1234"
-      assert {:ok, [1234], "", %{}, {1, 0}, 4} = Scanner.Parser.decimal(input)
+      assert {:ok, [1234.0], "", %{}, {1, 0}, 4} = Scanner.Parser.decimal(input)
     end
 
     test "Decimal parser -- single integer & remainder" do
       input = "1234 5132"
-      assert {:ok, [1234], " 5132", %{}, {1, 0}, 4} = Scanner.Parser.decimal(input)
+      assert {:ok, [1234.0], " 5132", %{}, {1, 0}, 4} = Scanner.Parser.decimal(input)
     end
 
     test "Decimal parser -- single integer plus dot fails" do
@@ -21,7 +21,7 @@ defmodule InterpretersTest.Parser do
     test "Decimal parser -- integer & decimal part" do
       input = "1234.5678910"
 
-      assert {:ok, [1234, ".", 5_678_910], "", %{}, {1, 0}, 12} =
+      assert {:ok, [1234.5_678_910], "", %{}, {1, 0}, 12} =
                Scanner.Parser.decimal(input)
     end
   end
@@ -120,6 +120,18 @@ defmodule InterpretersTest.Parser do
       parsing_result = Scanner.Parser.lox_syntax(input)
 
       assert {:ok, [^expected_1, ^expected_2], "", %{}, _, _} = Scanner.Parser.lox_syntax(input)
+    end
+
+    test "Lox Syntax -- Numbers mixed with tokens and whitespace" do
+      input = "(   1.23   )"
+      expected_1 = %Token{type: :left_paren, lexeme: "(", literal: nil, line: 1}
+      expected_2 = %Token{type: :number, lexeme: nil, literal: 1.23, line: 1}
+      expected_3 = %Token{type: :right_paren, lexeme: ")", literal: nil, line: 1}
+
+      parsing_result = Scanner.Parser.lox_syntax(input)
+
+      assert {:ok, [^expected_1, ^expected_2, ^expected_3], "", %{}, _, _} =
+               Scanner.Parser.lox_syntax(input)
     end
   end
 end
