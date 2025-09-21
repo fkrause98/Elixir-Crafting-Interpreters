@@ -83,7 +83,7 @@ defmodule Grammar.Traverse do
           :greater_equal -> ">="
         end
 
-      "(" <> stringified_operator <> " " <> repr(l_expr) <> " " <> repr(r_expr) <> " )"
+      "(" <> stringified_operator <> " " <> repr(l_expr) <> " " <> repr(r_expr) <> ")"
     end
 
     def repr(%Unary{modifier: mod, expr: expr}),
