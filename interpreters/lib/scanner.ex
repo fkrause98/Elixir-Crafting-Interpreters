@@ -30,7 +30,8 @@ defmodule Scanner.Parser do
       string("-"),
       string("+"),
       string(";"),
-      string("*")
+      string("*"),
+      string("/")
     ])
 
   defparsec(:token, single_char_parser |> post_traverse({:tokenize, []}))
@@ -59,11 +60,22 @@ defmodule Scanner.Parser do
   escaped_char = ascii_char([?\\]) |> utf8_char([])
   string_char = choice([escaped_char, utf8_char([{:not, ?"}])])
 
+  defp build_string(rest, consumed_chars, context, {line, _col}, _offset) do
+    unterminated? =
+      Enum.find(consumed_chars, fn elem -> match?({:unterminated_string, _}, elem) end)
+
+    if unterminated? do
+      {:error, "Unterminated string at line #{line}}}"}
+    else
+      {rest, [consumed_chars |> Enum.reverse() |> List.to_string()], context}
+    end
+  end
+
   literal_string_parser =
     ascii_char([?"])
     |> repeat(string_char)
-    |> ascii_char([?"])
-    |> reduce({List, :to_string, []})
+    |> choice([ascii_char([?"]), empty() |> tag(:unterminated_string)])
+    |> post_traverse({:build_string, []})
 
   defparsec(
     :literal_string,
@@ -79,10 +91,20 @@ defmodule Scanner.Parser do
     ])
     |> ignore()
 
+  defp not_newline(<<?\n, _::binary>>, context, _, _), do: {:halt, context}
+  defp not_newline(_, context, _, _), do: {:cont, context}
+
+  comment =
+    string("//")
+    |> repeat_while(utf8_char([]), :not_newline)
+    |> optional(string("\n"))
+    |> ignore()
+
   defparsec(
     :lox_syntax,
     choice([
       whitespace |> ignore,
+      comment |> ignore,
       literal_string_parser |> unwrap_and_tag(:string),
       decimal_parser |> unwrap_and_tag(:number),
       single_char_parser,
@@ -132,7 +154,6 @@ defmodule Scanner.Parser do
     {:error, "Unknown character in line #{line}: #{char}"}
   end
 
-  # Your char tokenize definition
   defp tokenize(char, line) do
     token_type =
       cond do
@@ -146,6 +167,7 @@ defmodule Scanner.Parser do
         char == "+" -> :plus
         char == ";" -> :semicolon
         char == "*" -> :star
+        char == "/" -> :slash
       end
 
     case token_type do
@@ -157,28 +179,31 @@ defmodule Scanner.Parser do
     end
   end
 
-  # Modified main tokenize function to collect errors in a list
-  defp tokenize(rest, args, context, {line, col}, offset) do
-    {tokens, errors, current_line} =
-      Enum.reduce(args, {[], [], line}, fn
-        :newline, {acc, errors, current_line} ->
-          {acc, errors, current_line + 1}
+  defp tokenize(rest, args, context, {line, _col}, _offset) do
+    {tokens, errors, _current_line} =
+      Enum.reduce(
+        args,
+        {[], [], line},
+        fn
+          :newline, {acc, errors, current_line} ->
+            {acc, errors, current_line + 1}
 
-        char, {acc, errors, current_line} when char in ["\r", "\t", " "] ->
-          {acc, errors, current_line}
+          char, {acc, errors, current_line} when char in ["\r", "\t", " "] ->
+            {acc, errors, current_line}
 
-        {token_type, raw_token}, {acc, errors, current_line} ->
-          case tokenize(raw_token, current_line, token_type) do
-            {:ok, token} -> {[token | acc], errors, current_line}
-            {:error, msg} -> {acc, [msg | errors], current_line}
-          end
+          {token_type, raw_token}, {acc, errors, current_line} ->
+            case tokenize(raw_token, current_line, token_type) do
+              {:ok, token} -> {[token | acc], errors, current_line}
+              {:error, msg} -> {acc, [msg | errors], current_line}
+            end
 
-        raw_elem, {acc, errors, current_line} ->
-          case tokenize(raw_elem, current_line) do
-            {:ok, token} -> {[token | acc], errors, current_line}
-            {:error, msg} -> {acc, [msg | errors], current_line}
-          end
-      end)
+          raw_elem, {acc, errors, current_line} ->
+            case tokenize(raw_elem, current_line) do
+              {:ok, token} -> {[token | acc], errors, current_line}
+              {:error, msg} -> {acc, [msg | errors], current_line}
+            end
+        end
+      )
 
     updated_context = Map.put(context, :errors, Enum.reverse(errors))
     {rest, Enum.reverse(tokens), updated_context}
@@ -206,25 +231,10 @@ defmodule Scanner.Helpers do
 end
 
 defmodule Scanner do
-  import Scanner.Helpers
   @enforce_keys [:source, :chars, :tokens, :line, :start, :current]
   defstruct [:source, :chars, tokens: [], current: 0, line: 0, start: 0]
 
-  def from_source(source) do
-    %Scanner{
-      source: source,
-      chars: source_to_chars(source),
-      tokens: [],
-      current: 0,
-      line: 0,
-      start: 0
-    }
+  def tokenize_source(source) do
+    Scanner.Parser.lox_syntax(source)
   end
-
-  defp source_to_chars(source) when is_binary(source) do
-    source
-    |> String.graphemes()
-  end
-
-  defp source_to_chars(_), do: raise("String expected")
 end

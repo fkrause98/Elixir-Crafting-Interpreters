@@ -24,7 +24,8 @@ defmodule Interpreters.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:nimble_parsec, "~> 1.4"}
+      {:nimble_parsec, "~> 1.4"},
+      {:fix_warnings, "~> 0.1.0", only: :dev}
     ]
   end
 end

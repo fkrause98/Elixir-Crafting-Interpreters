@@ -1,7 +1,6 @@
 defmodule InterpretersTest.Parser do
   defmodule Decimals do
     use ExUnit.Case
-    import ExUnit.CaptureIO
 
     test "Decimal parser -- single integer" do
       input = "1234"
@@ -28,13 +27,29 @@ defmodule InterpretersTest.Parser do
 
   defmodule SingleCharacter do
     use ExUnit.Case
-    import ExUnit.CaptureIO
 
     test "Token parser -- single token" do
-      input = ["(", ")", "{", "}", ",", ".", "-", "+", ";", "*"]
+      input = ["(", ")", "{", "}", ",", ".", "-", "+", ";", "*", "/"]
 
       for token <- input do
-        assert {:ok, [token], "", %{}, {1, 0}, 1} = Scanner.Parser.token(token)
+        assert {:ok, [%Token{lexeme: ^token}], "", %{}, {1, 0}, 1} = Scanner.Parser.token(token)
+      end
+    end
+
+    test "Token parser -- Commentary line is ignored" do
+      input = ["// Some programmers hate using commentaries for some reason \n"]
+
+      for token <- input do
+        assert {:ok, [], "", %{}, _, _} = Scanner.Parser.lox_syntax(token)
+      end
+    end
+
+    test "Token parser -- Commentary line is ignored, further tokens preserverd" do
+      input = ["// Some programmers hate using commentaries for some reason \n {}"]
+
+      for token <- input do
+        assert {:ok, [%Token{type: :left_brace}, %Token{type: :right_brace}], "", %{}, _, _} =
+                 Scanner.Parser.lox_syntax(token)
       end
     end
 
@@ -42,7 +57,7 @@ defmodule InterpretersTest.Parser do
       input = ["!", "=", "<", ">"]
 
       for token <- input do
-        assert {:ok, [token], "", %{}, _, _} = Scanner.Parser.operator(token)
+        assert {:ok, [^token], "", %{}, _, _} = Scanner.Parser.operator(token)
       end
     end
 
@@ -50,14 +65,13 @@ defmodule InterpretersTest.Parser do
       input = ["!=", "==", "<=", ">="]
 
       for token <- input do
-        assert {:ok, [token], "", %{}, _, _} = Scanner.Parser.operator(token)
+        assert {:ok, [^token], "", %{}, _, _} = Scanner.Parser.operator(token)
       end
     end
   end
 
   defmodule LiteralString do
     use ExUnit.Case
-    import ExUnit.CaptureIO
 
     test "Token parser -- literal empty string" do
       input = ~S("")
@@ -87,11 +101,19 @@ defmodule InterpretersTest.Parser do
       assert {:ok, [^input], "", %{}, _, _} =
                Scanner.Parser.literal_string(input)
     end
+
+    test "String parser -- unfinished literal" do
+      input = ~S("Winter is coming)
+
+      assert {:error, error_msg, "", %{}, _, _} =
+               Scanner.Parser.literal_string(input)
+
+      assert error_msg =~ "Unterminated string at line 1"
+    end
   end
 
   defmodule LoxSyntax.SingleToken do
     use ExUnit.Case
-    import ExUnit.CaptureIO
 
     test "Lox Syntax -- Single Token -- Maps to correct type" do
       simple_values = [
@@ -117,8 +139,6 @@ defmodule InterpretersTest.Parser do
       expected_1 = %Token{type: :left_paren, lexeme: "(", literal: nil, line: 1}
       expected_2 = %Token{type: :right_paren, lexeme: ")", literal: nil, line: 1}
 
-      parsing_result = Scanner.Parser.lox_syntax(input)
-
       assert {:ok, [^expected_1, ^expected_2], "", %{}, _, _} = Scanner.Parser.lox_syntax(input)
     end
 
@@ -127,8 +147,6 @@ defmodule InterpretersTest.Parser do
       expected_1 = %Token{type: :left_paren, lexeme: "(", literal: nil, line: 1}
       expected_2 = %Token{type: :number, lexeme: nil, literal: 1.23, line: 1}
       expected_3 = %Token{type: :right_paren, lexeme: ")", literal: nil, line: 1}
-
-      parsing_result = Scanner.Parser.lox_syntax(input)
 
       assert {:ok, [^expected_1, ^expected_2, ^expected_3], "", %{}, _, _} =
                Scanner.Parser.lox_syntax(input)
@@ -140,8 +158,6 @@ defmodule InterpretersTest.Parser do
       expected_2 = %Token{type: :number, lexeme: nil, literal: 1.23, line: 1}
       expected_3 = %Token{type: :right_paren, lexeme: ")", literal: nil, line: 1}
       expected_4 = %Token{type: :string, lexeme: nil, literal: "A string", line: 1}
-
-      parsing_result = Scanner.Parser.lox_syntax(input)
 
       assert {:ok, [^expected_1, ^expected_2, ^expected_3, ^expected_4], "", %{}, _, _} =
                Scanner.Parser.lox_syntax(input)
@@ -190,7 +206,7 @@ defmodule InterpretersTest.Parser do
     test "Lox Syntax -- Double token operators with strings" do
       input = ~S("hello" == "world")
       expected_1 = %Token{type: :string, lexeme: nil, literal: "hello", line: 1}
-      expected_2 = %Token{type: :equal_equal, lexeme: "==", literal: nil, line: 1}
+      expected_2 = %Token{type: :equal_equal, lexeme: ~S(==), literal: nil, line: 1}
       expected_3 = %Token{type: :string, lexeme: nil, literal: "world", line: 1}
 
       assert {:ok, [^expected_1, ^expected_2, ^expected_3], "", %{}, _, _} =
@@ -243,12 +259,17 @@ defmodule InterpretersTest.Parser do
     test "Error collection -- Unknown character in known tokens" do
       input = "(@ )"
 
-      assert {:ok, tokens, rest, context, line_info, offset} = Scanner.Parser.lox_syntax(input)
-      errors = Map.get(context, :errors, [])
+      assert {:ok, tokens, _, _, _, _offset} = Scanner.Parser.lox_syntax(input)
 
       token_types = Enum.map(tokens, & &1.type)
       assert :left_paren in token_types
       assert :right_paren in token_types
+    end
+
+    test "Lox Syntax -- Unfinished string is reported" do
+      input = ~S("Winter is coming)
+
+      assert {:error, _, _rest, _context, _line_info, _offset} = Scanner.Parser.lox_syntax(input)
     end
   end
 end

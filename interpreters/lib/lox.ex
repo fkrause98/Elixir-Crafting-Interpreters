@@ -18,7 +18,7 @@ defmodule Lox do
   end
 
   defp run(source) do
-    tokens = Scanner.scan_tokens(source)
+    tokens = Scanner.tokenize_source(source)
     Enum.each(tokens, fn token -> IO.puts(token) end)
   end
 
