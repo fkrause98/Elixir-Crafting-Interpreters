@@ -15,21 +15,6 @@ defmodule InterpretersTest.Scanner do
     {"*", :star}
   ]
 
-  test "Scanner reads simple chars" do
-    # for {token_lexeme, token_type} <- @simple_values do
-    #   expected = %Token{
-    #     type: token_type,
-    #     lexeme: token_lexeme,
-    #     literal: nil,
-    #     line: 0
-    #   }
-
-    #   {:ok, [token]} = token_lexeme |> Scanner.from_source() |> Scanner.scan_tokens()
-    #   assert expected == token
-  end
-
-  # end
-
   # test "Scanner reports error with unknown char" do
   #   assert capture_io(:stderr, fn ->
   #            Scanner.from_source("#") |> Scanner.scan_tokens()
@@ -99,19 +84,5 @@ defmodule InterpretersTest.Scanner do
   #            |> Scanner.from_source()
   #            |> Scanner.scan_tokens()
   #          end) =~ "Unfinished string"
-  # end
-
-  # test "Scanner works with numbers" do
-  #   source = "1234"
-
-  #   assert {:ok, [%Token{type: :number, literal: 1234.0}]} =
-  #            source |> Scanner.from_source() |> Scanner.scan_tokens()
-  # end
-
-  # test "Scanner works with multiple numbers" do
-  #   source = "1234 3453"
-
-  #   assert {:ok, [%Token{type: :number, literal: 1234.0}, %Token{type: :number, literal: 3453.0}]} =
-  #            source |> Scanner.from_source() |> Scanner.scan_tokens()
   # end
 end

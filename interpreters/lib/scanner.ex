@@ -52,19 +52,22 @@ defmodule Scanner.Parser do
       string(">=")
     ])
 
-  operator = choice([one_token_operator, two_token_operator])
+  operator = choice([two_token_operator, one_token_operator])
 
   defparsec(:operator, operator)
 
   escaped_char = ascii_char([?\\]) |> utf8_char([])
   string_char = choice([escaped_char, utf8_char([{:not, ?"}])])
 
-  defparsec(
-    :literal_string,
+  literal_string_parser =
     ascii_char([?"])
     |> repeat(string_char)
     |> ascii_char([?"])
     |> reduce({List, :to_string, []})
+
+  defparsec(
+    :literal_string,
+    literal_string_parser
   )
 
   whitespace =
@@ -80,82 +83,105 @@ defmodule Scanner.Parser do
     :lox_syntax,
     choice([
       whitespace |> ignore,
-      decimal_parser,
-      single_char_parser
+      literal_string_parser |> unwrap_and_tag(:string),
+      decimal_parser |> unwrap_and_tag(:number),
+      single_char_parser,
+      one_token_operator |> tag(:single_token_operator),
+      two_token_operator |> tag(:double_token_operator),
+      utf8_char([]) |> tag(:unknown_char)
     ])
     |> repeat
     |> post_traverse({:tokenize, []})
   )
 
-  defp tokenize(num, line) when is_float(num) do
-    %Token{
-      type: :number,
-      lexeme: nil,
-      literal: num,
-      line: line
-    }
+  defp tokenize([lexeme], line, :double_token_operator) do
+    case Scanner.Helpers.double_operator_type(lexeme) do
+      :unknown ->
+        {:error, "Unknown double operator in line #{line}: #{lexeme}"}
+
+      type ->
+        {:ok, %Token{type: type, lexeme: lexeme, literal: nil, line: line}}
+    end
   end
 
+  defp tokenize([lexeme], line, :single_token_operator) do
+    case Scanner.Helpers.operator_type(lexeme) do
+      :unknown ->
+        {:error, "Unknown single operator in line #{line}: #{lexeme}"}
+
+      type ->
+        {:ok, %Token{type: type, lexeme: lexeme, literal: nil, line: line}}
+    end
+  end
+
+  defp tokenize(num, line, :number) when is_float(num) do
+    {:ok, %Token{type: :number, lexeme: nil, literal: num, line: line}}
+  end
+
+  defp tokenize(string, line, type = :string) do
+    case String.split(string, "\"") do
+      ["", string_content, ""] ->
+        {:ok, %Token{type: type, lexeme: nil, literal: string_content, line: line}}
+
+      _ ->
+        {:error, "Malformed string literal in line #{line}: #{string}"}
+    end
+  end
+
+  defp tokenize(char, line, :unknown_char) do
+    {:error, "Unknown character in line #{line}: #{char}"}
+  end
+
+  # Your char tokenize definition
   defp tokenize(char, line) do
     token_type =
       cond do
-        char == "(" ->
-          :left_paren
-
-        char == ")" ->
-          :right_paren
-
-        char == "{" ->
-          :left_brace
-
-        char == "}" ->
-          :right_brace
-
-        char == "," ->
-          :comma
-
-        char == "." ->
-          :dot
-
-        char == "-" ->
-          :minus
-
-        char == "+" ->
-          :plus
-
-        char == ";" ->
-          :semicolon
-
-        char == "*" ->
-          :star
-
-        true ->
-          :unknown
+        char == "(" -> :left_paren
+        char == ")" -> :right_paren
+        char == "{" -> :left_brace
+        char == "}" -> :right_brace
+        char == "," -> :comma
+        char == "." -> :dot
+        char == "-" -> :minus
+        char == "+" -> :plus
+        char == ";" -> :semicolon
+        char == "*" -> :star
       end
 
-    %Token{
-      type: token_type,
-      lexeme: char,
-      literal: nil,
-      line: line
-    }
+    case token_type do
+      :unknown ->
+        {:error, "Unknown character in line #{line}: #{char}"}
+
+      _ ->
+        {:ok, %Token{type: token_type, lexeme: char, literal: nil, line: line}}
+    end
   end
 
+  # Modified main tokenize function to collect errors in a list
   defp tokenize(rest, args, context, {line, col}, offset) do
-    {tokens, current_line} =
-      Enum.reduce(args, {[], line}, fn
-        :newline, {acc, current_line} ->
-          {acc, current_line + 1}
+    {tokens, errors, current_line} =
+      Enum.reduce(args, {[], [], line}, fn
+        :newline, {acc, errors, current_line} ->
+          {acc, errors, current_line + 1}
 
-        char, {acc, current_line} when char in ["\r", "\t", " "] ->
-          {acc, current_line}
+        char, {acc, errors, current_line} when char in ["\r", "\t", " "] ->
+          {acc, errors, current_line}
 
-        char, {acc, current_line} ->
-          token = tokenize(char, current_line)
-          {[token | acc], current_line}
+        {token_type, raw_token}, {acc, errors, current_line} ->
+          case tokenize(raw_token, current_line, token_type) do
+            {:ok, token} -> {[token | acc], errors, current_line}
+            {:error, msg} -> {acc, [msg | errors], current_line}
+          end
+
+        raw_elem, {acc, errors, current_line} ->
+          case tokenize(raw_elem, current_line) do
+            {:ok, token} -> {[token | acc], errors, current_line}
+            {:error, msg} -> {acc, [msg | errors], current_line}
+          end
       end)
 
-    {rest, Enum.reverse(tokens), context}
+    updated_context = Map.put(context, :errors, Enum.reverse(errors))
+    {rest, Enum.reverse(tokens), updated_context}
   end
 end
 
@@ -163,14 +189,15 @@ defmodule Scanner.Helpers do
   def is_operator(leading_char, ["=" | _]), do: leading_char in ["!", "=", "<", ">"]
   def is_operator(_, _), do: false
 
-  def operator_type(char) do
-    case char do
-      "!" -> :bang_equal
-      "=" -> :equal_equal
-      "<" -> :less_equal
-      ">" -> :greater_equal
-    end
-  end
+  def operator_type("!"), do: :bang
+  def operator_type("="), do: :equal
+  def operator_type("<"), do: :less
+  def operator_type(">"), do: :greater
+
+  def double_operator_type("!="), do: :bang_equal
+  def double_operator_type("=="), do: :equal_equal
+  def double_operator_type("<="), do: :less_equal
+  def double_operator_type(">="), do: :greater_equal
 
   def is_string("\""), do: true
   def is_string(_), do: false
@@ -200,163 +227,4 @@ defmodule Scanner do
   end
 
   defp source_to_chars(_), do: raise("String expected")
-
-  # Finish when there are no tokens left
-  def scan_tokens(%Scanner{chars: [], tokens: tokens}), do: {:ok, tokens |> Enum.reverse()}
-
-  # # FIXME: Implement comments
-  # def scan_tokens(%Scanner{chars: ["/", "/" | _]}) do
-  #   raise "Implement comments"
-  # end
-
-  # def scan_tokens(scanner = %Scanner{chars: [char | following_chars]})
-  #     when char in [" ", "\r", "\t"] do
-  #   scan_tokens(%Scanner{scanner | chars: following_chars})
-  # end
-
-  # def scan_tokens(scanner = %Scanner{chars: ["\n" | following_chars], line: line}) do
-  #   scan_tokens(%Scanner{scanner | chars: following_chars, line: line + 1})
-  # end
-
-  def scan_tokens(scanner = %Scanner{source: source}) do
-    # next_token_type =
-    #   cond do
-    #     char == "(" -> :left_paren
-    #     char == ")" -> :right_paren
-    #     char == "{" -> :left_brace
-    #     char == "}" -> :right_brace
-    #     char == "," -> :comma
-    #     char == "." -> :dot
-    #     char == "-" -> :minus
-    #     char == "+" -> :plus
-    #     char == ";" -> :semicolon
-    #     char == "*" -> :star
-    #     is_operator(char, following_chars) -> operator_type(char)
-    #     true -> :unknown
-    #   end
-
-    # case next_token_type do
-    #   :unknown ->
-    #     Lox.error(scanner.line, "Unexpected token")
-
-    # :number ->
-    #   raise "Todo"
-
-    # scanner.source
-    # |> String.slice(scanner.start..scanner.current)
-    # {:ok, [integer_part], remainder, %{}, _, _} =
-    #   scanner.source
-    #   |> String.slice(scanner.start(...))
-    #   |> Scanner.Parser.Decimals.decimal()
-    #   |> dbg
-
-    # {literal, ""} = Float.parse("#{integer_part}")
-
-    # %Token{
-    #   type: :number,
-    #   literal: literal,
-    #   lexeme: nil,
-    #   line: 0
-    # }
-
-    # :string ->
-    #   string_scanning_result =
-    #     scan_string(%Scanner{
-    #       scanner
-    #       | chars: following_chars,
-    #         start: scanner.current,
-    #         current: scanner.current + 1
-    #     })
-
-    #   case string_scanning_result do
-    #     {:ok, updated_scanner} ->
-    #       scan_tokens(updated_scanner)
-
-    #     {:error, msg} ->
-    #       Lox.error(scanner.line, msg)
-    #   end
-
-    # _ when next_token_type in [:bang_equal, :equal_equal, :less_equal, :greater_equal] ->
-    #   scanner
-    #   |> handle_operator(next_token_type)
-    #   |> scan_tokens()
-
-    # _ ->
-    #   scanner
-    #   |> handle_single_char_token(next_token_type)
-    #   |> scan_tokens()
-  end
-
-  defp scan_string(scanner = %Scanner{chars: []}) do
-    Lox.error(scanner.line, "Unfinished string")
-  end
-
-  defp scan_string(scanner = %Scanner{chars: [char | tail], line: line}) do
-    case char do
-      "\n" ->
-        scan_string(%Scanner{scanner | chars: tail, line: line + 1})
-
-      "\"" ->
-        string_token = %Token{
-          type: :string,
-          lexeme: nil,
-          line: scanner.line,
-          literal: scanner.source |> String.slice(scanner.start..(scanner.current + 1))
-        }
-
-        {:ok,
-         %Scanner{
-           scanner
-           | tokens: [string_token | scanner.tokens],
-             chars: tail,
-             current: scanner.current + 1,
-             start: scanner.current
-         }}
-
-      _ ->
-        scan_string(%Scanner{scanner | current: scanner.current + 1, chars: tail})
-    end
-  end
-
-  defp handle_operator(scanner = %Scanner{chars: [_, "=" | following_chars]}, next_token_type) do
-    next_token = %Token{
-      type: next_token_type,
-      literal: nil,
-      lexeme:
-        String.slice(
-          scanner.source,
-          scanner.start..(scanner.current + 2)
-        ),
-      line: scanner.line
-    }
-
-    %Scanner{
-      scanner
-      | chars: following_chars,
-        tokens: [next_token | scanner.tokens],
-        current: scanner.current + 2,
-        start: scanner.current
-    }
-  end
-
-  defp handle_single_char_token(scanner = %Scanner{chars: [_ | following_chars]}, next_token_type) do
-    next_token = %Token{
-      type: next_token_type,
-      literal: nil,
-      lexeme:
-        String.slice(
-          scanner.source,
-          scanner.start..(scanner.current + 1)
-        ),
-      line: scanner.line
-    }
-
-    %Scanner{
-      scanner
-      | chars: following_chars,
-        tokens: [next_token | scanner.tokens],
-        current: scanner.current + 1,
-        start: scanner.current
-    }
-  end
 end

@@ -133,5 +133,122 @@ defmodule InterpretersTest.Parser do
       assert {:ok, [^expected_1, ^expected_2, ^expected_3], "", %{}, _, _} =
                Scanner.Parser.lox_syntax(input)
     end
+
+    test "Lox Syntax -- Numbers mixed with tokens and strings" do
+      input = "(  1.23 )" <> ~S("A string")
+      expected_1 = %Token{type: :left_paren, lexeme: "(", literal: nil, line: 1}
+      expected_2 = %Token{type: :number, lexeme: nil, literal: 1.23, line: 1}
+      expected_3 = %Token{type: :right_paren, lexeme: ")", literal: nil, line: 1}
+      expected_4 = %Token{type: :string, lexeme: nil, literal: "A string", line: 1}
+
+      parsing_result = Scanner.Parser.lox_syntax(input)
+
+      assert {:ok, [^expected_1, ^expected_2, ^expected_3, ^expected_4], "", %{}, _, _} =
+               Scanner.Parser.lox_syntax(input)
+    end
+
+    test "Lox Syntax -- Double token operators" do
+      double_token_operators = [
+        {"!=", %Token{type: :bang_equal, lexeme: "!=", literal: nil, line: 1}},
+        {"==", %Token{type: :equal_equal, lexeme: "==", literal: nil, line: 1}},
+        {"<=", %Token{type: :less_equal, lexeme: "<=", literal: nil, line: 1}},
+        {">=", %Token{type: :greater_equal, lexeme: ">=", literal: nil, line: 1}}
+      ]
+
+      for {operator, expected} <- double_token_operators do
+        assert {:ok, [^expected], "", %{}, {1, 0}, 2} = Scanner.Parser.lox_syntax(operator)
+      end
+    end
+
+    test "Lox Syntax -- Double token operators with whitespace" do
+      input = "  !=  "
+      expected = %Token{type: :bang_equal, lexeme: "!=", literal: nil, line: 1}
+
+      assert {:ok, [^expected], "", %{}, _, _} = Scanner.Parser.lox_syntax(input)
+    end
+
+    test "Lox Syntax -- Double token operators mixed with parentheses" do
+      input = "(!=)"
+      expected_1 = %Token{type: :left_paren, lexeme: "(", literal: nil, line: 1}
+      expected_2 = %Token{type: :bang_equal, lexeme: "!=", literal: nil, line: 1}
+      expected_3 = %Token{type: :right_paren, lexeme: ")", literal: nil, line: 1}
+
+      assert {:ok, [^expected_1, ^expected_2, ^expected_3], "", %{}, _, _} =
+               Scanner.Parser.lox_syntax(input)
+    end
+
+    test "Lox Syntax -- Double token operators with numbers" do
+      input = "1.23 != 4.56"
+      expected_1 = %Token{type: :number, lexeme: nil, literal: 1.23, line: 1}
+      expected_2 = %Token{type: :bang_equal, lexeme: "!=", literal: nil, line: 1}
+      expected_3 = %Token{type: :number, lexeme: nil, literal: 4.56, line: 1}
+
+      assert {:ok, [^expected_1, ^expected_2, ^expected_3], "", %{}, _, _} =
+               Scanner.Parser.lox_syntax(input)
+    end
+
+    test "Lox Syntax -- Double token operators with strings" do
+      input = ~S("hello" == "world")
+      expected_1 = %Token{type: :string, lexeme: nil, literal: "hello", line: 1}
+      expected_2 = %Token{type: :equal_equal, lexeme: "==", literal: nil, line: 1}
+      expected_3 = %Token{type: :string, lexeme: nil, literal: "world", line: 1}
+
+      assert {:ok, [^expected_1, ^expected_2, ^expected_3], "", %{}, _, _} =
+               Scanner.Parser.lox_syntax(input)
+    end
+
+    test "Lox Syntax -- Single vs double token disambiguation" do
+      input = "!="
+      expected = %Token{type: :bang_equal, lexeme: "!=", literal: nil, line: 1}
+
+      assert {:ok, [^expected], "", %{}, _, _} = Scanner.Parser.lox_syntax(input)
+
+      input_spaced = "! ="
+      expected_1 = %Token{type: :bang, lexeme: "!", literal: nil, line: 1}
+      expected_2 = %Token{type: :equal, lexeme: "=", literal: nil, line: 1}
+
+      assert {:ok, [^expected_1, ^expected_2], "", %{}, _, _} =
+               Scanner.Parser.lox_syntax(input_spaced)
+    end
+
+    test "Lox Syntax -- Single token operators" do
+      single_token_operators = [
+        {"!", %Token{type: :bang, lexeme: "!", literal: nil, line: 1}},
+        {"=", %Token{type: :equal, lexeme: "=", literal: nil, line: 1}},
+        {"<", %Token{type: :less, lexeme: "<", literal: nil, line: 1}},
+        {">", %Token{type: :greater, lexeme: ">", literal: nil, line: 1}}
+      ]
+
+      for {operator, expected} <- single_token_operators do
+        assert {:ok, [^expected], "", %{}, {1, 0}, 1} = Scanner.Parser.lox_syntax(operator)
+      end
+    end
+
+    test "Lox Syntax -- Single token operators with whitespace" do
+      input = "  !  "
+      expected = %Token{type: :bang, lexeme: "!", literal: nil, line: 1}
+
+      assert {:ok, [^expected], "", %{}, _, _} = Scanner.Parser.lox_syntax(input)
+    end
+
+    test "Error collection -- Unknown single character" do
+      input = "@"
+
+      assert {:ok, [], "", context, {1, 0}, 1} = Scanner.Parser.lox_syntax(input)
+      errors = Map.get(context, :errors, [])
+      assert length(errors) == 1
+      assert hd(errors) =~ "Unknown character in line 1: @"
+    end
+
+    test "Error collection -- Unknown character in known tokens" do
+      input = "(@ )"
+
+      assert {:ok, tokens, rest, context, line_info, offset} = Scanner.Parser.lox_syntax(input)
+      errors = Map.get(context, :errors, [])
+
+      token_types = Enum.map(tokens, & &1.type)
+      assert :left_paren in token_types
+      assert :right_paren in token_types
+    end
   end
 end
