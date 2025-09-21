@@ -65,7 +65,7 @@ defmodule Scanner.Parser do
       Enum.find(consumed_chars, fn elem -> match?({:unterminated_string, _}, elem) end)
 
     if unterminated? do
-      {:error, "Unterminated string at line #{line}}}"}
+      {:error, "Unterminated string at line #{line}"}
     else
       {rest, [consumed_chars |> Enum.reverse() |> List.to_string()], context}
     end
@@ -235,6 +235,10 @@ defmodule Scanner do
   defstruct [:source, :chars, tokens: [], current: 0, line: 0, start: 0]
 
   def tokenize_source(source) do
-    Scanner.Parser.lox_syntax(source)
+    case Scanner.Parser.lox_syntax(source) do
+      {:ok, tokens, _, %{}, _, _} -> {:ok, tokens}
+      {:error, err_msg, _, %{}, _, _} -> {:error, err_msg}
+      {:error, err_msg} -> {:error, err_msg}
+    end
   end
 end

@@ -18,8 +18,10 @@ defmodule Lox do
   end
 
   defp run(source) do
-    tokens = Scanner.tokenize_source(source)
-    Enum.each(tokens, fn token -> IO.puts(token) end)
+    case Scanner.tokenize_source(source) do
+      {:ok, tokens} -> tokens |> Enum.each(fn x -> IO.inspect(x) end)
+      {:error, err_msg} -> IO.puts(err_msg)
+    end
   end
 
   def error(line, message) do
@@ -44,8 +46,7 @@ defmodule Lox do
         loop()
 
       input ->
-        IO.inspect(input)
-
+        run(input)
         loop()
     end
   end
