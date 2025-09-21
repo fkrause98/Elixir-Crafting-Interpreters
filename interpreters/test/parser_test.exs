@@ -123,7 +123,7 @@ defmodule InterpretersTest.Parser do
     end
 
     test "Lox Syntax -- Numbers mixed with tokens and whitespace" do
-      input = "(   1.23   )"
+      input = "(   1.23   ) "
       expected_1 = %Token{type: :left_paren, lexeme: "(", literal: nil, line: 1}
       expected_2 = %Token{type: :number, lexeme: nil, literal: 1.23, line: 1}
       expected_3 = %Token{type: :right_paren, lexeme: ")", literal: nil, line: 1}

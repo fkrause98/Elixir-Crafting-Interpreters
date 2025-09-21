@@ -33,7 +33,7 @@ defmodule Scanner.Parser do
       string("*")
     ])
 
-  defparsec(:token, single_char_parser |> post_traverse({:map_token_to_type, []}))
+  defparsec(:token, single_char_parser |> post_traverse({:tokenize, []}))
 
   one_token_operator =
     choice([
@@ -84,7 +84,7 @@ defmodule Scanner.Parser do
       single_char_parser
     ])
     |> repeat
-    |> post_traverse({:map_token_to_type, []})
+    |> post_traverse({:tokenize, []})
   )
 
   defp tokenize(num, line) when is_float(num) do
@@ -141,7 +141,7 @@ defmodule Scanner.Parser do
     }
   end
 
-  defp map_token_to_type(rest, args, context, {line, col}, offset) do
+  defp tokenize(rest, args, context, {line, col}, offset) do
     {tokens, current_line} =
       Enum.reduce(args, {[], line}, fn
         :newline, {acc, current_line} ->
