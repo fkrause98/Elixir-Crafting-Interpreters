@@ -100,11 +100,19 @@ defmodule Scanner.Parser do
     |> optional(string("\n"))
     |> ignore()
 
+  boolean =
+    choice([
+      string("true"),
+      string("false"),
+      string("nil")
+    ])
+
   defparsec(
     :lox_syntax,
     choice([
       whitespace |> ignore,
       comment |> ignore,
+      boolean |> tag(:bool),
       literal_string_parser |> unwrap_and_tag(:string),
       decimal_parser |> unwrap_and_tag(:number),
       single_char_parser,
@@ -149,6 +157,11 @@ defmodule Scanner.Parser do
         {:error, "Malformed string literal in line #{line}: #{string}"}
     end
   end
+
+  defp tokenize([bool], line, :bool),
+    do:
+      {:ok,
+       %Token{type: :boolean, literal: String.to_existing_atom(bool), line: line, lexeme: nil}}
 
   defp tokenize(char, line, :unknown_char) do
     {:error, "Unknown character in line #{line}: #{char}"}
@@ -236,9 +249,17 @@ defmodule Scanner do
 
   def tokenize_source(source) do
     case Scanner.Parser.lox_syntax(source) do
-      {:ok, tokens, _, %{}, _, _} -> {:ok, tokens}
-      {:error, err_msg, _, %{}, _, _} -> {:error, err_msg}
-      {:error, err_msg} -> {:error, err_msg}
+      {:ok, [], "", %{errors: err_msgs}, _, _} ->
+        {:error, err_msgs |> Enum.reverse()}
+
+      {:ok, tokens, _, %{}, _, _} ->
+        {:ok, tokens}
+
+      {:error, err_msg, _, %{}, _, _} ->
+        {:error, err_msg}
+
+      {:error, err_msg} ->
+        {:error, err_msg}
     end
   end
 end
