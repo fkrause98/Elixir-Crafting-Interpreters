@@ -27,3 +27,5 @@ interpreters-*.tar
 
 
 .direnv
+
+interpreters
