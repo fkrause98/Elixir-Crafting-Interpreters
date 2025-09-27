@@ -19,11 +19,8 @@ defmodule Lox do
 
   defp run(source) do
     with {:ok, tokens} <- Scanner.tokenize_source(source),
-         {:ok, {[], parsed}} <- Parser.parse_token_stream(tokens) do
+         {:ok, {_, parsed}} <- Parser.parse_token_stream(tokens) do
       IO.inspect(parsed)
-    else
-      {:error, err_msg} ->
-        IO.puts(err_msg)
     end
   end
 

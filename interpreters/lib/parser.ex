@@ -1,6 +1,13 @@
 defmodule Parser do
   def parse_token_stream(tokens) do
-    Parser.expression(tokens)
+    case expression(tokens) do
+      {:ok, result} ->
+        {:ok, result}
+
+      {:error, err} ->
+        IO.puts("Parse error: #{err}")
+        {:error, err}
+    end
   end
 
   def expression(tokens), do: equality(tokens)
@@ -33,10 +40,17 @@ defmodule Parser do
 
   def unary(tokens), do: primary(tokens)
 
-  def primary([%Token{type: :left_paren} | tokens]) do
+  def primary([%Token{type: :left_paren, line: line} | tokens]) do
     case expression(tokens) do
       {:ok, {[%Token{type: :right_paren} | tokens], expr}} ->
         {:ok, {tokens, %Grammar.Grouping{expr: expr}}}
+
+      {:ok, {[next_token | _], _expr}} ->
+        {:error,
+         "Missing closing parenthesis at line #{line}. Found '#{next_token.lexeme}' at line #{next_token.line}"}
+
+      {:ok, {[], _expr}} ->
+        {:error, "Missing closing parenthesis at line #{line}. Reached end of input"}
 
       err = {:error, _} ->
         err
@@ -47,41 +61,50 @@ defmodule Parser do
     {:ok, {tokens, %Grammar.Primary{value: literal}}}
   end
 
-  def primary(tokens), do: {:error, {tokens, nil}}
+  def primary([]), do: {:error, "Unexpected end of input"}
+
+  def primary([%Token{type: type, lexeme: lexeme, line: line} | _]) do
+    {:error, "Unexpected token '#{lexeme}' (#{type}) at line #{line}"}
+  end
 
   defp do_parse(tokens, next, types) do
     case next.(tokens) do
       {:ok, {remainder, expr}} ->
-        case remainder do
-          [] ->
-            {:ok, {[], expr}}
-
-          [token] ->
-            {:ok, {[token], expr}}
-
-          [%Token{type: type} | tokens] ->
-            case next.(tokens) do
-              {:ok, {remainder, r_expr}} ->
-                {:ok, {remainder, %Grammar.Binary{operator: type, l_expr: expr, r_expr: r_expr}}}
-
-              {:error, err} ->
-                IO.puts("error parsing binary exp: #{err}")
-
-                synchronize(tokens)
-            end
-        end
+        parse_binary_chain(remainder, expr, next, types)
 
       {:error, err} ->
-        IO.puts("error parsing: #{err}")
-        synchronize(tokens)
+        {:error, err}
+    end
+  end
+
+  defp parse_binary_chain([], expr, _next, _types), do: {:ok, {[], expr}}
+  defp parse_binary_chain([token], expr, _next, _types), do: {:ok, {[token], expr}}
+
+  defp parse_binary_chain([%Token{type: type} = token | remaining_tokens], left_expr, next, types) do
+    if type in types do
+      parse_binary_operator(remaining_tokens, left_expr, type, next, types)
+    else
+      {:ok, {[token | remaining_tokens], left_expr}}
+    end
+  end
+
+  defp parse_binary_operator(tokens, left_expr, operator, next, types) do
+    case next.(tokens) do
+      {:ok, {remainder, right_expr}} ->
+        binary_expr = %Grammar.Binary{operator: operator, l_expr: left_expr, r_expr: right_expr}
+        parse_binary_chain(remainder, binary_expr, next, types)
+
+      {:error, err} ->
+        {:error, err}
     end
   end
 
   defp synchronize(tokens) when is_list(tokens) do
     tokens = Enum.drop_while(tokens, &synchronize_stop?/1)
+    {:ok, tokens}
   end
 
   defp synchronize_stop?(%Token{type: token_type}) do
-    token_type in [:class, :fun, :for, :if, :while, :print, :return]
+    token_type not in [:class, :fun, :for, :if, :while, :print, :return]
   end
 end
