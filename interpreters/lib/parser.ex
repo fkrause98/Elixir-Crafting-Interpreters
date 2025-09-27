@@ -2,62 +2,19 @@ defmodule Parser do
   def expression(tokens), do: equality(tokens)
 
   def equality(tokens) do
-    with {:ok, {remainder, expr}} <- comparison(tokens) do
-      case remainder do
-        [%Token{type: type} | tokens] when type in [:bang_equal, :equal_equal] ->
-          with {:ok, {[], r_expr}} <- comparison(tokens) do
-            {:ok, {[], %Grammar.Binary{operator: type, l_expr: expr, r_expr: r_expr}}}
-          end
-
-        tokens ->
-          {:ok, {tokens, expr}}
-      end
-    end
+    do_parse(tokens, &comparison/1, [:bang_equal, :equal_equal])
   end
 
   def comparison(tokens) do
-    with {:ok, {remainder, l_expr}} <- term(tokens) do
-      case remainder do
-        [%Token{type: type} | tokens]
-        when type in [:greater, :greater_equal, :less, :less_equal] ->
-          with {:ok, {final_remainder, r_expr}} <- term(tokens) do
-            {:ok,
-             {final_remainder, %Grammar.Binary{operator: type, l_expr: l_expr, r_expr: r_expr}}}
-          end
-
-        remainder ->
-          {:ok, {remainder, l_expr}}
-      end
-    end
+    do_parse(tokens, &term/1, [:greater, :greater_equal, :less, :less_equal])
   end
 
   def term(tokens) do
-    with {:ok, {remainder, expr}} <- factor(tokens) do
-      case remainder do
-        [%Token{type: type} | tokens] when type in [:minus, :plus] ->
-          with {:ok, {final_remainder, r_expr}} <- factor(tokens) do
-            {:ok,
-             {final_remainder, %Grammar.Binary{operator: type, l_expr: expr, r_expr: r_expr}}}
-          end
-
-        remainder ->
-          {:ok, {remainder, expr}}
-      end
-    end
+    do_parse(tokens, &factor/1, [:minus, :plus])
   end
 
   def factor(tokens) do
-    with {:ok, {remainder, expr}} <- unary(tokens) do
-      case remainder do
-        [%Token{type: type} | tokens] when type in [:slash, :star] ->
-          with {:ok, {remainder, r_expr}} <- unary(tokens) do
-            {:ok, {remainder, %Grammar.Binary{operator: type, l_expr: expr, r_expr: r_expr}}}
-          end
-
-        tokens ->
-          {:ok, {tokens, expr}}
-      end
-    end
+    do_parse(tokens, &unary/1, [:slash, :star])
   end
 
   def unary([%Token{type: type} | tokens]) when type in [:bang, :minus] do
@@ -79,4 +36,22 @@ defmodule Parser do
   end
 
   def primary(tokens), do: {:error, {tokens, nil}}
+
+  defp do_parse(tokens, next, types) do
+    with {:ok, {remainder, expr}} <- next.(tokens) do
+      case remainder do
+        [%Token{type: type} | tokens] ->
+          case next.(tokens) do
+            {:ok, {remainder, r_expr}} ->
+              {:ok, {[], %Grammar.Binary{operator: type, l_expr: expr, r_expr: r_expr}}}
+
+            {:error, err} ->
+              :error
+          end
+
+        tokens ->
+          {:ok, {tokens, expr}}
+      end
+    end
+  end
 end
