@@ -1,4 +1,8 @@
 defmodule Parser do
+  def parse_token_stream(tokens) do
+    Parser.expression(tokens)
+  end
+
   def expression(tokens), do: equality(tokens)
 
   def equality(tokens) do
@@ -17,41 +21,67 @@ defmodule Parser do
     do_parse(tokens, &unary/1, [:slash, :star])
   end
 
-  def unary([%Token{type: type} | tokens]) when type in [:bang, :minus] do
-    case primary(tokens) do
-      {:ok, {remainder, primary}} ->
-        {:ok, {remainder, %Grammar.Unary{operator: type, expr: primary}}}
+  def unary([%Token{type: operator} | tokens]) when operator in [:bang, :minus] do
+    case unary(tokens) do
+      {:ok, {remainder, right}} ->
+        {:ok, {remainder, %Grammar.Unary{operator: operator, expr: right}}}
 
-      {:error, _} ->
-        with {:ok, {remainder, unary_expr}} <- unary(tokens) do
-          {:ok, {remainder, %Grammar.Unary{operator: type, expr: unary_expr}}}
-        end
+      {:error, err} ->
+        {:error, err}
     end
   end
 
   def unary(tokens), do: primary(tokens)
 
-  def primary([%Token{literal: literal} | tokens]) do
+  def primary([%Token{type: :left_paren} | tokens]) do
+    case expression(tokens) do
+      {:ok, {[%Token{type: :right_paren} | tokens], expr}} ->
+        {:ok, {tokens, %Grammar.Grouping{expr: expr}}}
+
+      err = {:error, _} ->
+        err
+    end
+  end
+
+  def primary([%Token{literal: literal} | tokens]) when literal != nil do
     {:ok, {tokens, %Grammar.Primary{value: literal}}}
   end
 
   def primary(tokens), do: {:error, {tokens, nil}}
 
   defp do_parse(tokens, next, types) do
-    with {:ok, {remainder, expr}} <- next.(tokens) do
-      case remainder do
-        [%Token{type: type} | tokens] ->
-          case next.(tokens) do
-            {:ok, {remainder, r_expr}} ->
-              {:ok, {[], %Grammar.Binary{operator: type, l_expr: expr, r_expr: r_expr}}}
+    case next.(tokens) do
+      {:ok, {remainder, expr}} ->
+        case remainder do
+          [] ->
+            {:ok, {[], expr}}
 
-            {:error, err} ->
-              :error
-          end
+          [token] ->
+            {:ok, {[token], expr}}
 
-        tokens ->
-          {:ok, {tokens, expr}}
-      end
+          [%Token{type: type} | tokens] ->
+            case next.(tokens) do
+              {:ok, {remainder, r_expr}} ->
+                {:ok, {remainder, %Grammar.Binary{operator: type, l_expr: expr, r_expr: r_expr}}}
+
+              {:error, err} ->
+                IO.puts("error parsing binary exp: #{err}")
+
+                synchronize(tokens)
+            end
+        end
+
+      {:error, err} ->
+        IO.puts("error parsing: #{err}")
+        synchronize(tokens)
     end
+  end
+
+  defp synchronize(tokens) when is_list(tokens) do
+    tokens = Enum.drop_while(tokens, &synchronize_stop?/1)
+  end
+
+  defp synchronize_stop?(%Token{type: token_type}) do
+    token_type in [:class, :fun, :for, :if, :while, :print, :return]
   end
 end

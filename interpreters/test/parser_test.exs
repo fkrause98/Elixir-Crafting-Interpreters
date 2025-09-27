@@ -30,7 +30,7 @@ defmodule InterpretersTest.Grammar do
 
   test "Parse simple literal (nil)" do
     assert {:ok, tokens} = ~S(nil) |> Scanner.tokenize_source()
-    assert {:ok, {_remainder, %Grammar.Primary{value: nil}}} = Parser.primary(tokens)
+    assert {:ok, {_remainder, %Grammar.Primary{value: :null}}} = Parser.primary(tokens)
   end
 
   test "Parse simple expression" do
@@ -125,7 +125,7 @@ defmodule InterpretersTest.Grammar do
   end
 
   test "Parse nil literal" do
-    assert {:ok, {[], %Grammar.Primary{value: nil}}} = parse_expression("nil")
+    assert {:ok, {[], %Grammar.Primary{value: :null}}} = parse_expression("nil")
   end
 
   test "Parse unary minus" do
@@ -147,7 +147,12 @@ defmodule InterpretersTest.Grammar do
   end
 
   test "Parse nested unary expressions" do
-    assert :error = parse_expression("-!false")
+    {:ok,
+     {[],
+      %Grammar.Unary{
+        expr: %Grammar.Unary{expr: %Grammar.Primary{value: false}, operator: :bang},
+        operator: :minus
+      }}}
   end
 
   test "Parse multiplication" do
@@ -280,8 +285,13 @@ defmodule InterpretersTest.Grammar do
             {[],
              %Grammar.Binary{
                operator: :bang_equal,
-               l_expr: %Grammar.Primary{value: nil},
+               l_expr: %Grammar.Primary{value: :null},
                r_expr: %Grammar.Primary{value: 5.0}
              }}} = parse_expression("nil != 5")
+  end
+
+  test "Parse expr between parens" do
+    assert {:ok, {[], %Grammar.Grouping{expr: %Grammar.Primary{value: 1.0}}}} =
+             parse_expression("(1)")
   end
 end

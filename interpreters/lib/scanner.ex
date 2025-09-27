@@ -158,7 +158,10 @@ defmodule Scanner.Parser do
     end
   end
 
-  defp tokenize([bool], line, :bool),
+  defp tokenize(["nil"], line, :bool),
+    do: {:ok, %Token{type: :boolean, literal: :null, line: line, lexeme: nil}}
+
+  defp tokenize([bool], line, :bool) when bool in ["true", "false"],
     do:
       {:ok,
        %Token{type: :boolean, literal: String.to_existing_atom(bool), line: line, lexeme: nil}}

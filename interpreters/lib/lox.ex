@@ -18,9 +18,12 @@ defmodule Lox do
   end
 
   defp run(source) do
-    case Scanner.tokenize_source(source) do
-      {:ok, tokens} -> tokens |> Enum.each(fn x -> IO.inspect(x) end)
-      {:error, err_msg} -> IO.puts(err_msg)
+    with {:ok, tokens} <- Scanner.tokenize_source(source),
+         {:ok, {[], parsed}} <- Parser.parse_token_stream(tokens) do
+      IO.inspect(parsed)
+    else
+      {:error, err_msg} ->
+        IO.puts(err_msg)
     end
   end
 
